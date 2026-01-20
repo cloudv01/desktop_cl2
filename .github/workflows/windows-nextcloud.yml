@@ -96,7 +96,7 @@ jobs:
             New-Item -ItemType Directory -Path theme | Out-Null
           }
 
-          $file = "theme\Droptocloud.VisualElementsManifest.xml"
+          $file = "theme\nextcloud.VisualElementsManifest.xml"
           if (Test-Path $file) { Remove-Item $file }
 
           Add-Content $file '<Application xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'

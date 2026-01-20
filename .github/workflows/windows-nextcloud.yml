@@ -14,7 +14,6 @@ jobs:
       CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
       CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
       CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2022_64-cl
-      CRAFT_USE_SYSTEM_LIBS: "False"
 
     steps:
       # -------------------------------------------------
@@ -37,7 +36,7 @@ jobs:
             windows-craft-
 
       # -------------------------------------------------
-      # 3. PYTHON
+      # 3. SETUP PYTHON
       # -------------------------------------------------
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -45,12 +44,12 @@ jobs:
           python-version: '3.12'
 
       # -------------------------------------------------
-      # 4. INSTALL WiX ONLY (NO INKSCAPE)
+      # 4. INSTALL TOOLS (INKSCAPE + WIX)
       # -------------------------------------------------
-      - name: Install WiX
+      - name: Install Inkscape and WiX
         shell: pwsh
         run: |
-          choco install wixtoolset --no-progress -y
+          choco install inkscape wixtoolset --no-progress -y
 
       # -------------------------------------------------
       # 5. INSTALL CRAFT
@@ -71,8 +70,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
+          # Add Nextcloud blueprint repositories
           craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-kde.git|stable-4.0|"
           craft --add-blueprint-repository "https://github.com/nextcloud/desktop-client-blueprints.git|stable-4.0|"
+
+          # Install dependencies and build initial craft
           craft craft
           craft --install-deps nextcloud-client
 
@@ -94,7 +96,7 @@ jobs:
             New-Item -ItemType Directory -Path theme | Out-Null
           }
 
-          $file = "theme\nextcloud.VisualElementsManifest.xml"
+          $file = "theme\Droptocloud.VisualElementsManifest.xml"
           if (Test-Path $file) { Remove-Item $file }
 
           Add-Content $file '<Application xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
@@ -120,8 +122,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
+          # Build the client
           craft nextcloud-client
-          craft package nextcloud-client --package-type msi
+
+          # Package as MSI (correct syntax)
+          craft --options nextcloud-client.packageType=msi package nextcloud-client
 
       # -------------------------------------------------
       # 8. UPLOAD MSI

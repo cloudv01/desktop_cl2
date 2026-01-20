@@ -180,7 +180,7 @@ jobs:
 
       # 8️⃣ Upload MSI & EXE installers
       - name: Upload Windows Installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nextcloud-desktop-windows-installers
           path: |

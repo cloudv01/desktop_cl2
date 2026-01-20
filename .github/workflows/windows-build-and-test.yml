@@ -188,118 +188,138 @@
 #             ${{ env.CRAFT_ROOT }}\tmp\*.exe
 
 
-name: Build and Package Nextcloud Desktop (Windows MSI & EXE)
+
+name: Build Branded Windows MSI Client
 
 on:
-push:
-branches: [ master, main ]
-workflow_dispatch:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
 
 jobs:
-build:
-name: Windows Build, Package & Upload
-runs-on: windows-2022
+  build:
+    runs-on: windows-2022
 
-```
-env:
-  CRAFT_TARGET: windows-msvc2022_64-cl
-  CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
-  CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
-  CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2022_64-cl
+    env:
+      CRAFT_TARGET: windows-msvc2022_64-cl
+      CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
+      CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
+      CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2022_64-cl
 
-steps:
-  # 1️⃣ Checkout
-  - name: Checkout Code
-    uses: actions/checkout@v4
-    with:
-      fetch-depth: 0
+    steps:
+      # -------------------------------------------------
+      # 1. CHECKOUT
+      # -------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-  # 2️⃣ Python
-  - name: Setup Python
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.12"
+      # -------------------------------------------------
+      # 2. CACHE CRAFT
+      # -------------------------------------------------
+      - name: Cache Craft
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CRAFT_ROOT }}
+          key: windows-craft-v3
+          restore-keys: |
+            windows-craft-
 
-  # 3️⃣ Install Craft + Blueprints
-  - name: Install Craft Master
-    shell: pwsh
-    run: |
-      if (!(Test-Path "$env:CRAFT_MASTER_LOCATION")) {
-        git clone --depth=1 https://invent.kde.org/packaging/craftmaster.git "$env:CRAFT_MASTER_LOCATION"
-      }
+      # -------------------------------------------------
+      # 3. PYTHON
+      # -------------------------------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      function craft {
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          --target "$env:CRAFT_TARGET" `
-          -c @args
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      }
+      # -------------------------------------------------
+      # 4. TOOLS (INKSCAPE + WIX)
+      # -------------------------------------------------
+      - name: Install Inkscape and WiX
+        shell: pwsh
+        run: |
+          choco install inkscape wixtoolset --no-progress -y
+          echo "C:\Program Files\Inkscape\bin" >> $env:GITHUB_PATH
 
-      craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-kde.git|stable-4.0|"
-      craft --add-blueprint-repository "https://github.com/nextcloud/desktop-client-blueprints.git|stable-4.0|"
-      craft craft
-      craft --install-deps nextcloud-client
+      # -------------------------------------------------
+      # 5. INSTALL CRAFT
+      # -------------------------------------------------
+      - name: Install Craft
+        shell: pwsh
+        run: |
+          if (!(Test-Path "${{ env.CRAFT_MASTER_LOCATION }}")) {
+            git clone --depth=1 https://invent.kde.org/packaging/craftmaster.git `
+              "${{ env.CRAFT_MASTER_LOCATION }}"
+          }
 
-  # 4️⃣ Patch blueprint bug
-  - name: Patch Nextcloud blueprint
-    shell: pwsh
-    run: |
-      $file = "$env:CRAFT_ROOT\etc\blueprints\locations\desktop-client-blueprints\nextcloud-client\nextcloud-client.py"
-      if (Test-Path $file) {
-        $txt = Get-Content $file
-        if ($txt -notmatch "^import os") {
-          Write-Host "Adding missing import os"
-          Set-Content $file ("import os`n" + ($txt -join "`n"))
-        }
-      }
+          function craft {
+            param([Parameter(ValueFromRemainingArguments=$true)]$Args)
+            python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+              --config "${{ env.CRAFT_MASTER_CONFIG }}" `
+              --target ${{ env.CRAFT_TARGET }} -c @Args
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
-  # 5️⃣ Install packaging tools
-  - name: Install Inkscape & NSIS
-    shell: pwsh
-    run: choco install inkscape nsis -y --no-progress
+          craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-kde.git|stable-4.0|"
+          craft --add-blueprint-repository "https://github.com/nextcloud/desktop-client-blueprints.git|stable-4.0|"
+          craft craft
+          craft --install-deps nextcloud-client
 
-  # 6️⃣ Setup PATH
-  - name: Setup PATH
-    shell: pwsh
-    run: |
-      "C:\Program Files\Inkscape\bin" | Out-File $env:GITHUB_PATH -Append
-      "$env:CRAFT_ROOT\bin" | Out-File $env:GITHUB_PATH -Append
+      # -------------------------------------------------
+      # 6. PATCH + BRANDING (100% SAFE)
+      # -------------------------------------------------
+      - name: Patch Blueprint and Branding
+        shell: pwsh
+        run: |
+          $bp = "${{ env.CRAFT_ROOT }}\etc\blueprints\locations\desktop-client-blueprints\nextcloud-client\nextcloud-client.py"
+          if (Test-Path $bp) {
+            $content = Get-Content $bp -Raw
+            if ($content -notmatch "import os") {
+              "import os`r`n$content" | Set-Content $bp
+            }
+          }
 
-  # 7️⃣ Build
-  - name: Build Nextcloud Desktop
-    shell: pwsh
-    run: |
-      function craft {
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          --target "$env:CRAFT_TARGET" `
-          -c @args
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      }
+          if (!(Test-Path "theme")) {
+            New-Item -ItemType Directory -Path theme | Out-Null
+          }
 
-      craft --src-dir "$env:GITHUB_WORKSPACE" nextcloud-client
+          $file = "theme\nextcloud.VisualElementsManifest.xml"
+          if (Test-Path $file) { Remove-Item $file }
 
-  # 8️⃣ Package MSI & EXE
-  - name: Package Installers
-    shell: pwsh
-    run: |
-      function craft {
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          --target "$env:CRAFT_TARGET" `
-          -c @args
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      }
+          Add-Content $file '<Application xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+          Add-Content $file '  <VisualElements'
+          Add-Content $file '    ShowNameOnSquare150x150Logo="on"'
+          Add-Content $file '    Square150x150Logo="visualelements\150-nextcloud-icon.png"'
+          Add-Content $file '    Square70x70Logo="visualelements\70-nextcloud-icon.png"'
+          Add-Content $file '    ForegroundText="light"'
+          Add-Content $file '    BackgroundColor="#0082c9"/>'
+          Add-Content $file '</Application>'
 
-      craft --package nextcloud-client
+      # -------------------------------------------------
+      # 7. BUILD + PACKAGE (MSI ONLY)
+      # -------------------------------------------------
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          function craft {
+            param([Parameter(ValueFromRemainingArguments=$true)]$Args)
+            python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+              --config "${{ env.CRAFT_MASTER_CONFIG }}" `
+              --target ${{ env.CRAFT_TARGET }} -c @Args
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
-  # 9️⃣ Upload artifacts
-  - name: Upload Windows Installers
-    uses: actions/upload-artifact@v4
-    with:
-      name: nextcloud-desktop-windows
-      path: |
-        ${{ env.CRAFT_ROOT }}\tmp\*.msi
-        ${{ env.CRAFT_ROOT }}\tmp\*.exe
-```
+          craft --src-dir ${{ github.workspace }} nextcloud-client
+          craft --package nextcloud-client --package-type msi
+
+      # -------------------------------------------------
+      # 8. UPLOAD MSI ONLY
+      # -------------------------------------------------
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextcloud-Windows-MSI
+          path: |
+            ${{ env.CRAFT_ROOT }}\tmp\*.msi

@@ -115,7 +115,7 @@
 #     steps:
 #       # 1️⃣ Checkout source
 #       - name: Checkout Code
-#         uses: actions/checkout@v4
+#         uses: actions/checkout@v6
 #         with:
 #           fetch-depth: 0
 
@@ -211,7 +211,7 @@ jobs:
       # 1. CHECKOUT
       # -------------------------------------------------
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 

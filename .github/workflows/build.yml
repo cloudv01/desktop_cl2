@@ -1,3 +1,56 @@
+# # # name: Build Nextcloud Desktop (Windows EXE)
+
+# # # on:
+# # #   push:
+# # #     branches: [ main, master ]
+# # #   workflow_dispatch:
+
+# # # jobs:
+# # #   build-windows:
+# # #     runs-on: windows-latest
+
+# # #     steps:
+# # #     - name: Checkout source
+# # #       uses: actions/checkout@v4
+# # #       with:
+# # #         submodules: recursive
+
+# # #     - name: Install Qt
+# # #       uses: jurplel/install-qt-action@v4
+# # #       with:
+# # #         version: 6.6.3
+# # #         host: windows
+# # #         target: desktop
+# # #         arch: win64_msvc2019_64
+# # #         modules: qtwebengine
+# # #         cache: true
+
+# # #     - name: Install dependencies
+# # #       run: |
+# # #         choco install -y cmake ninja openssl strawberryperl
+
+# # #     - name: Configure
+# # #       run: |
+# # #         cmake -S . -B build ^
+# # #           -G "Ninja" ^
+# # #           -DBUILD_WITH_QT6=ON ^
+# # #           -DCMAKE_BUILD_TYPE=Release
+
+# # #     - name: Build
+# # #       run: |
+# # #         cmake --build build
+
+# # #     - name: Package EXE
+# # #       run: |
+# # #         cmake --build build --target package
+
+# # #     - name: Upload EXE
+# # #       uses: actions/upload-artifact@v4
+# # #       with:
+# # #         name: nextcloud-desktop-windows-exe
+# # #         path: build/*.exe
+
+
 # # name: Build Nextcloud Desktop (Windows EXE)
 
 # # on:
@@ -25,24 +78,33 @@
 # #         modules: qtwebengine
 # #         cache: true
 
-# #     - name: Install dependencies
+# #     - name: Install build tools
 # #       run: |
-# #         choco install -y cmake ninja openssl strawberryperl
+# #         choco install -y cmake ninja openssl strawberryperl git
 
-# #     - name: Configure
+# #     # 🔧 FIX 1: Install KDE Extra CMake Modules (ECM)
+# #     - name: Install KDE ECM
 # #       run: |
-# #         cmake -S . -B build ^
-# #           -G "Ninja" ^
-# #           -DBUILD_WITH_QT6=ON ^
-# #           -DCMAKE_BUILD_TYPE=Release
+# #         git clone https://invent.kde.org/frameworks/extra-cmake-modules.git
+# #         cd extra-cmake-modules
+# #         cmake -S . -B build -G "Ninja" -DCMAKE_INSTALL_PREFIX=C:/ecm
+# #         cmake --build build
+# #         cmake --install build
+
+# #     # 🔧 FIX 2: PowerShell-safe cmake command (NO ^)
+# #     - name: Configure
+# #       run: >
+# #         cmake -S . -B build
+# #         -G "Ninja"
+# #         -DBUILD_WITH_QT6=ON
+# #         -DCMAKE_BUILD_TYPE=Release
+# #         -DCMAKE_PREFIX_PATH="C:/ecm"
 
 # #     - name: Build
-# #       run: |
-# #         cmake --build build
+# #       run: cmake --build build
 
 # #     - name: Package EXE
-# #       run: |
-# #         cmake --build build --target package
+# #       run: cmake --build build --target package
 
 # #     - name: Upload EXE
 # #       uses: actions/upload-artifact@v4
@@ -68,7 +130,7 @@
 #       with:
 #         submodules: recursive
 
-#     - name: Install Qt
+#     - name: Install Qt (MSVC)
 #       uses: jurplel/install-qt-action@v4
 #       with:
 #         version: 6.6.3
@@ -80,18 +142,27 @@
 
 #     - name: Install build tools
 #       run: |
-#         choco install -y cmake ninja openssl strawberryperl git
+#         choco install -y cmake ninja git strawberryperl
 
-#     # 🔧 FIX 1: Install KDE Extra CMake Modules (ECM)
+#     # ✅ Install OpenSSL via vcpkg (MSVC-compatible)
+#     - name: Install OpenSSL (vcpkg)
+#       run: |
+#         git clone https://github.com/microsoft/vcpkg.git C:/vcpkg
+#         C:/vcpkg/bootstrap-vcpkg.bat
+#         C:/vcpkg/vcpkg install openssl:x64-windows
+
+#     # ✅ Install KDE ECM
 #     - name: Install KDE ECM
 #       run: |
 #         git clone https://invent.kde.org/frameworks/extra-cmake-modules.git
 #         cd extra-cmake-modules
-#         cmake -S . -B build -G "Ninja" -DCMAKE_INSTALL_PREFIX=C:/ecm
+#         cmake -S . -B build -G "Ninja" ^
+#           -DCMAKE_INSTALL_PREFIX=C:/ecm ^
+#           -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 #         cmake --build build
 #         cmake --install build
 
-#     # 🔧 FIX 2: PowerShell-safe cmake command (NO ^)
+#     # ✅ Configure Nextcloud Desktop
 #     - name: Configure
 #       run: >
 #         cmake -S . -B build
@@ -99,6 +170,7 @@
 #         -DBUILD_WITH_QT6=ON
 #         -DCMAKE_BUILD_TYPE=Release
 #         -DCMAKE_PREFIX_PATH="C:/ecm"
+#         -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 
 #     - name: Build
 #       run: cmake --build build
@@ -112,8 +184,7 @@
 #         name: nextcloud-desktop-windows-exe
 #         path: build/*.exe
 
-
-name: Build Nextcloud Desktop (Windows EXE)
+name: Build Nextcloud Desktop (Windows MSI)
 
 on:
   push:
@@ -130,7 +201,8 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install Qt (MSVC)
+    # Qt (MSVC)
+    - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
         version: 6.6.3
@@ -140,46 +212,55 @@ jobs:
         modules: qtwebengine
         cache: true
 
+    # Build tools
     - name: Install build tools
       run: |
-        choco install -y cmake ninja git strawberryperl
+        choco install -y cmake ninja git strawberryperl wix
 
-    # ✅ Install OpenSSL via vcpkg (MSVC-compatible)
+    # OpenSSL (MSVC) via vcpkg
     - name: Install OpenSSL (vcpkg)
       run: |
         git clone https://github.com/microsoft/vcpkg.git C:/vcpkg
         C:/vcpkg/bootstrap-vcpkg.bat
         C:/vcpkg/vcpkg install openssl:x64-windows
 
-    # ✅ Install KDE ECM
+    # KDE Extra CMake Modules (ECM)
     - name: Install KDE ECM
-      run: |
-        git clone https://invent.kde.org/frameworks/extra-cmake-modules.git
-        cd extra-cmake-modules
-        cmake -S . -B build -G "Ninja" ^
-          -DCMAKE_INSTALL_PREFIX=C:/ecm ^
-          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-        cmake --build build
+      run: >
+        git clone https://invent.kde.org/frameworks/extra-cmake-modules.git &&
+        cd extra-cmake-modules &&
+        cmake -S . -B build -G "Ninja"
+        -DCMAKE_INSTALL_PREFIX=C:/ecm
+        -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake &&
+        cmake --build build &&
         cmake --install build
 
-    # ✅ Configure Nextcloud Desktop
+    # Configure Nextcloud Desktop
     - name: Configure
       run: >
-        cmake -S . -B build
-        -G "Ninja"
+        cmake -S . -B build -G "Ninja"
         -DBUILD_WITH_QT6=ON
         -DCMAKE_BUILD_TYPE=Release
         -DCMAKE_PREFIX_PATH="C:/ecm"
         -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 
+    # Build
     - name: Build
       run: cmake --build build
 
-    - name: Package EXE
-      run: cmake --build build --target package
+    # Package as MSI
+    - name: Package MSI Installer
+      run: |
+        cmake --install build --prefix build/install
+        cd build
+        cmake -G "Ninja" .
+        set CPACK_GENERATOR=WIX
+        cmake --build . --target package
 
-    - name: Upload EXE
+    # Upload MSI
+    - name: Upload MSI
       uses: actions/upload-artifact@v4
       with:
-        name: nextcloud-desktop-windows-exe
-        path: build/*.exe
+        name: nextcloud-desktop-windows-msi
+        path: build/*.msi
+

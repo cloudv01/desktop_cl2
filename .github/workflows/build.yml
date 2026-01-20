@@ -1,0 +1,51 @@
+name: Build Nextcloud Desktop (Windows EXE)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: 6.6.3
+        host: windows
+        target: desktop
+        arch: win64_msvc2019_64
+        modules: qtwebengine
+        cache: true
+
+    - name: Install dependencies
+      run: |
+        choco install -y cmake ninja openssl strawberryperl
+
+    - name: Configure
+      run: |
+        cmake -S . -B build ^
+          -G "Ninja" ^
+          -DBUILD_WITH_QT6=ON ^
+          -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: |
+        cmake --build build
+
+    - name: Package EXE
+      run: |
+        cmake --build build --target package
+
+    - name: Upload EXE
+      uses: actions/upload-artifact@v4
+      with:
+        name: nextcloud-desktop-windows-exe
+        path: build/*.exe

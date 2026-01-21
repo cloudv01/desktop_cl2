@@ -41,12 +41,15 @@ jobs:
           -Value "[General]`nABI = windows-msvc2022_64-cl" `
           -Encoding ascii
 
+    # -----------------------------
+    # ✅ BOOTSTRAP CRAFT
+    # -----------------------------
     - name: Bootstrap Craft
       shell: powershell
       run: |
         python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
           --config "$env:CRAFT_MASTER_CONFIG" `
-          -c nextcloud-client
+          --setup
 
     - name: Disable Inkscape Blueprint
       shell: powershell

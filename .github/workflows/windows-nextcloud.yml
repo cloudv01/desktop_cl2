@@ -10,10 +10,10 @@ jobs:
     runs-on: windows-2022
 
     env:
-      CRAFT_TARGET: windows-msvc2022_64-cl
+      CRAFT_TARGET: windows-msvc2019_64-cl
       CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
       CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
-      CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2022_64-cl
+      CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2019_64-cl
 
     steps:
     - name: Checkout source
@@ -24,6 +24,12 @@ jobs:
       with:
         python-version: '3.10'
 
+    - name: Install Visual Studio Build Tools + Ninja
+      shell: powershell
+      run: |
+        choco install visualstudio2019buildtools --includeRecommended --includeOptional -y
+        choco install ninja -y
+
     - name: Clone CraftMaster
       shell: powershell
       run: |
@@ -33,17 +39,20 @@ jobs:
             "$env:CRAFT_MASTER_LOCATION"
         }
 
-    - name: Create craftmaster.ini (ASCII)
+    - name: Create craftmaster.ini
       shell: powershell
       run: |
-        Set-Content `
-          -Path "$env:CRAFT_MASTER_CONFIG" `
-          -Value "[General]`nABI = windows-msvc2022_64-cl" `
-          -Encoding ascii
+        Set-Content -Path "$env:CRAFT_MASTER_CONFIG" `
+          -Value "[General]`nABI = windows-msvc2019_64-cl" `
+          -Encoding Ascii
 
-    # -----------------------------
-    # ✅ BOOTSTRAP CRAFT
-    # -----------------------------
+    - name: Print available Craft targets (fail-fast)
+      shell: powershell
+      run: |
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          --print-targets
+
     - name: Bootstrap Craft
       shell: powershell
       run: |
@@ -51,6 +60,7 @@ jobs:
           --config "$env:CRAFT_MASTER_CONFIG" `
           --setup
 
+    # Disable Inkscape blueprint to avoid SVG crashes
     - name: Disable Inkscape Blueprint
       shell: powershell
       run: |
@@ -58,40 +68,20 @@ jobs:
           "$env:CRAFT_ROOT\etc\blueprints\locations\desktop-client-blueprints\binary\_win\inkscape" `
           -Recurse -Force -ErrorAction SilentlyContinue
 
-    - name: Update Craft
-      shell: powershell
-      run: |
-        $env:Path="$env:CRAFT_ROOT\craft\bin;$env:Path"
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          -c nextcloud-client --update
-
-    - name: Install Nextcloud dependencies
-      shell: powershell
-      run: |
-        $env:Path="$env:CRAFT_ROOT\craft\bin;$env:Path"
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          -c nextcloud-client --install-deps
-
     - name: Build Nextcloud Desktop
       shell: powershell
       run: |
         $env:Path="$env:CRAFT_ROOT\craft\bin;$env:Path"
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          -c nextcloud-client
+        craft nextcloud-client
 
     - name: Package MSI
       shell: powershell
       run: |
         $env:Path="$env:CRAFT_ROOT\craft\bin;$env:Path"
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          -c nextcloud-client --options nextcloud-client.packageType=msi
+        craft package nextcloud-client --options nextcloud-client.packageType=msi
 
     - name: Upload MSI
       uses: actions/upload-artifact@v4
       with:
         name: nextcloud-desktop-msi
-        path: ${{ env.CRAFT_ROOT }}\tmp\*.msi
+        path: ${{ env:CRAFT_ROOT }}\tmp\*.msi

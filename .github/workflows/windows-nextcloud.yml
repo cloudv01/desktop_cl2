@@ -10,81 +10,75 @@ jobs:
     runs-on: windows-2022
 
     env:
-      CRAFT_TARGET: windows-msvc2019_64-cl
-      CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
-      CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
-      CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2019_64-cl
+      CRAFT_ROOT: C:\CraftRoot
 
     steps:
     - name: Checkout source
       uses: actions/checkout@v4
 
-    - name: Setup Python 3.10
+    # Python (required by Craft)
+    - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    - name: Install Visual Studio Build Tools + Ninja
+    # Install Visual Studio Build Tools (C++ Desktop)
+    - name: Install Visual Studio Build Tools
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    # Install KDE Craft (official installer)
+    - name: Install KDE Craft
       shell: powershell
       run: |
-        choco install visualstudio2019buildtools --includeRecommended --includeOptional -y
-        choco install ninja -y
+        Invoke-WebRequest `
+          -Uri https://binary-factory.kde.org/job/Craft_Nightly_Windows/lastSuccessfulBuild/artifact/CraftInstaller.exe `
+          -OutFile CraftInstaller.exe
 
-    - name: Clone CraftMaster
+        Start-Process `
+          -FilePath .\CraftInstaller.exe `
+          -ArgumentList "/S /D=$env:CRAFT_ROOT" `
+          -Wait
+
+    # Load Craft environment
+    - name: Load Craft Environment
       shell: powershell
       run: |
-        if (!(Test-Path "$env:CRAFT_MASTER_LOCATION")) {
-          git clone https://invent.kde.org/packaging/craftmaster.git `
-            -b master `
-            "$env:CRAFT_MASTER_LOCATION"
-        }
+        & "$env:CRAFT_ROOT\craft\craftenv.ps1"
+        craft --version
 
-    - name: Create craftmaster.ini
+    # Add Nextcloud desktop blueprints
+    - name: Add Nextcloud Blueprints
       shell: powershell
       run: |
-        Set-Content `
-          -Path "$env:CRAFT_MASTER_CONFIG" `
-          -Value "[General]`nABI = windows-msvc2019_64-cl" `
-          -Encoding Ascii
+        & "$env:CRAFT_ROOT\craft\craftenv.ps1"
+        craft --add-blueprint-repository https://github.com/nextcloud/desktop-client-blueprints.git
 
-    # 🔎 FAIL FAST – shows targets immediately
-    - name: Print available Craft targets
+    # Install dependencies
+    - name: Install Dependencies
       shell: powershell
       run: |
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          --print-targets
+        & "$env:CRAFT_ROOT\craft\craftenv.ps1"
+        craft --install-deps nextcloud-client
 
-    - name: Bootstrap Craft
-      shell: powershell
-      run: |
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          --setup
-
-    # 🔥 Prevent SVG / Inkscape crash
-    - name: Disable Inkscape Blueprint
-      shell: powershell
-      run: |
-        Remove-Item `
-          "$env:CRAFT_ROOT\etc\blueprints\locations\desktop-client-blueprints\binary\_win\inkscape" `
-          -Recurse -Force -ErrorAction SilentlyContinue
-
+    # Build Nextcloud Desktop
     - name: Build Nextcloud Desktop
       shell: powershell
       run: |
-        $env:PATH="$env:CRAFT_ROOT\craft\bin;$env:PATH"
+        & "$env:CRAFT_ROOT\craft\craftenv.ps1"
         craft nextcloud-client
 
+    # Package MSI
     - name: Package MSI
       shell: powershell
       run: |
-        $env:PATH="$env:CRAFT_ROOT\craft\bin;$env:PATH"
-        craft package nextcloud-client --options nextcloud-client.packageType=msi
+        & "$env:CRAFT_ROOT\craft\craftenv.ps1"
+        craft package nextcloud-client
 
+    # Upload MSI
     - name: Upload MSI
       uses: actions/upload-artifact@v4
       with:
         name: nextcloud-desktop-msi
-        path: |
-          ${{ env.CRAFT_ROOT }}\tmp\*.msi
+        path: C:\CraftRoot\packages\*.msi

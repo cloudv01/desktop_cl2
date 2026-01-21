@@ -53,40 +53,42 @@ jobs:
           -Encoding Ascii
 
     # -------------------------------------------------
-    # 5️⃣ Bootstrap Craft (register basic paths)
+    # 5️⃣ Bootstrap Craft (register paths)
     # -------------------------------------------------
     - name: Bootstrap Craft
       shell: powershell
       run: |
         python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
           --config "$env:CRAFT_MASTER_CONFIG" `
-          craft
+          -c craft
 
     # -------------------------------------------------
-    # 6️⃣ Add Blueprints (needed for Windows target)
+    # 6️⃣ Add Blueprints
     # -------------------------------------------------
     - name: Add Craft Blueprints
       shell: powershell
       run: |
         $env:PATH="$env:CRAFT_TARGET\craft\bin;$env:PATH"
-
-        craft --add-blueprint-repository `
-          https://invent.kde.org/packaging/craft-blueprints-kde.git
-
-        craft --add-blueprint-repository `
-          https://github.com/nextcloud/desktop-client-blueprints.git
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          -c --add-blueprint-repository https://invent.kde.org/packaging/craft-blueprints-kde.git
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          -c --add-blueprint-repository https://github.com/nextcloud/desktop-client-blueprints.git
 
     # -------------------------------------------------
-    # 7️⃣ Fast-Fail Dependency Check (❌ Catch errors early)
+    # 7️⃣ Fast-Fail Dependency Check
     # -------------------------------------------------
-    - name: Check Targets & Dependencies (Fast-Fail)
+    - name: Check Targets & Dependencies
       shell: powershell
       run: |
         $env:PATH="$env:CRAFT_TARGET\craft\bin;$env:PATH"
-        # No build, just resolve dependencies and targets
-        craft nextcloud-client -n
-        # Also install dependencies (fails fast if missing)
-        craft --install-deps nextcloud-client
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          -c nextcloud-client -n
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          -c --install-deps nextcloud-client
 
     # -------------------------------------------------
     # 8️⃣ Disable broken Inkscape blueprint
@@ -99,13 +101,15 @@ jobs:
           -Recurse -Force -ErrorAction SilentlyContinue
 
     # -------------------------------------------------
-    # 9️⃣ Update Craft (register targets)
+    # 9️⃣ Update Craft
     # -------------------------------------------------
     - name: Update Craft
       shell: powershell
       run: |
         $env:PATH="$env:CRAFT_TARGET\craft\bin;$env:PATH"
-        craft --update
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          -c --update
 
     # -------------------------------------------------
     # 🔟 Build Nextcloud Desktop
@@ -114,7 +118,9 @@ jobs:
       shell: powershell
       run: |
         $env:PATH="$env:CRAFT_TARGET\craft\bin;$env:PATH"
-        craft nextcloud-client
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          -c nextcloud-client
 
     # -------------------------------------------------
     # 1️⃣1️⃣ Package MSI
@@ -123,7 +129,9 @@ jobs:
       shell: powershell
       run: |
         $env:PATH="$env:CRAFT_TARGET\craft\bin;$env:PATH"
-        craft package nextcloud-client --options nextcloud-client.packageType=msi
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          -c package nextcloud-client --options nextcloud-client.packageType=msi
 
     # -------------------------------------------------
     # 1️⃣2️⃣ Upload MSI Artifact

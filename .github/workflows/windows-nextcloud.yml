@@ -42,11 +42,13 @@ jobs:
     - name: Create craftmaster.ini
       shell: powershell
       run: |
-        Set-Content -Path "$env:CRAFT_MASTER_CONFIG" `
+        Set-Content `
+          -Path "$env:CRAFT_MASTER_CONFIG" `
           -Value "[General]`nABI = windows-msvc2019_64-cl" `
           -Encoding Ascii
 
-    - name: Print available Craft targets (fail-fast)
+    # 🔎 FAIL FAST – shows targets immediately
+    - name: Print available Craft targets
       shell: powershell
       run: |
         python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
@@ -60,7 +62,7 @@ jobs:
           --config "$env:CRAFT_MASTER_CONFIG" `
           --setup
 
-    # Disable Inkscape blueprint to avoid SVG crashes
+    # 🔥 Prevent SVG / Inkscape crash
     - name: Disable Inkscape Blueprint
       shell: powershell
       run: |
@@ -71,17 +73,18 @@ jobs:
     - name: Build Nextcloud Desktop
       shell: powershell
       run: |
-        $env:Path="$env:CRAFT_ROOT\craft\bin;$env:Path"
+        $env:PATH="$env:CRAFT_ROOT\craft\bin;$env:PATH"
         craft nextcloud-client
 
     - name: Package MSI
       shell: powershell
       run: |
-        $env:Path="$env:CRAFT_ROOT\craft\bin;$env:Path"
+        $env:PATH="$env:CRAFT_ROOT\craft\bin;$env:PATH"
         craft package nextcloud-client --options nextcloud-client.packageType=msi
 
     - name: Upload MSI
       uses: actions/upload-artifact@v4
       with:
         name: nextcloud-desktop-msi
-        path: ${{ env:CRAFT_ROOT }}\tmp\*.msi
+        path: |
+          ${{ env.CRAFT_ROOT }}\tmp\*.msi

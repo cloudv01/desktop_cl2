@@ -15,15 +15,23 @@ jobs:
       CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
 
     steps:
+    # -------------------------------------------------
+    # Checkout
+    # -------------------------------------------------
     - name: Checkout source
       uses: actions/checkout@v4
 
-    # ⚠️ Craft DOES NOT WORK with Python 3.12
+    # -------------------------------------------------
+    # Python (Craft requires 3.10)
+    # -------------------------------------------------
     - name: Setup Python 3.10
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
+    # -------------------------------------------------
+    # Clone CraftMaster
+    # -------------------------------------------------
     - name: Clone CraftMaster
       shell: powershell
       run: |
@@ -33,21 +41,31 @@ jobs:
             "$env:CRAFT_MASTER_LOCATION"
         }
 
+    # -------------------------------------------------
+    # Create craftmaster.ini (NO BOM)
+    # -------------------------------------------------
     - name: Create craftmaster.ini
       shell: powershell
       run: |
-        echo [General] > "$env:CRAFT_MASTER_CONFIG"
-        echo ABI = windows-msvc2022_64-cl >> "$env:CRAFT_MASTER_CONFIG"
+        Set-Content `
+          -Path "$env:CRAFT_MASTER_CONFIG" `
+          -Value "[General]`nABI = windows-msvc2022_64-cl" `
+          -Encoding Ascii
 
+    # -------------------------------------------------
+    # Bootstrap Craft
+    # -------------------------------------------------
     - name: Bootstrap Craft
       shell: powershell
       run: |
-        python $env:CRAFT_MASTER_LOCATION\CraftMaster.py `
-          --config $env:CRAFT_MASTER_CONFIG `
-          --target $env:CRAFT_TARGET `
+        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
+          --config "$env:CRAFT_MASTER_CONFIG" `
+          --target "$env:CRAFT_TARGET" `
           craft
 
-    # 🔥 FIX Inkscape blueprint crash
+    # -------------------------------------------------
+    # FIX: Disable broken Inkscape blueprint
+    # -------------------------------------------------
     - name: Disable Inkscape Blueprint
       shell: powershell
       run: |
@@ -55,31 +73,42 @@ jobs:
           "$env:CRAFT_TARGET\etc\blueprints\locations\desktop-client-blueprints\binary\_win\inkscape" `
           -Recurse -Force -ErrorAction SilentlyContinue
 
+    # -------------------------------------------------
+    # Update Craft
+    # -------------------------------------------------
     - name: Update Craft
       shell: powershell
       run: |
-        $env:Path="$env:CRAFT_TARGET\craft\bin;$env:Path"
+        $env:PATH="$env:CRAFT_TARGET\craft\bin;$env:PATH"
         craft --update
 
+    # -------------------------------------------------
+    # Build Nextcloud Desktop
+    # -------------------------------------------------
     - name: Build Nextcloud Desktop
       shell: powershell
       run: |
-        $env:Path="$env:CRAFT_TARGET\craft\bin;$env:Path"
+        $env:PATH="$env:CRAFT_TARGET\craft\bin;$env:PATH"
         craft nextcloud-client
 
+    # -------------------------------------------------
+    # Package MSI
+    # -------------------------------------------------
     - name: Package MSI
       shell: powershell
       run: |
-        $env:Path="$env:CRAFT_TARGET\craft\bin;$env:Path"
+        $env:PATH="$env:CRAFT_TARGET\craft\bin;$env:PATH"
         craft package nextcloud-client --options nextcloud-client.packageType=msi
 
+    # -------------------------------------------------
+    # Upload MSI
+    # -------------------------------------------------
     - name: Upload MSI
       uses: actions/upload-artifact@v4
       with:
         name: nextcloud-desktop-msi
         path: |
           ${{ env.CRAFT_TARGET }}\tmp\*.msi
-
 
 # name: Build Branded Windows MSI Client
 

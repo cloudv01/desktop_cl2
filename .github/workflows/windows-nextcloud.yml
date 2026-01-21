@@ -1,4 +1,4 @@
-name: Build Branded Windows MSI Client
+name: Build Nextcloud Desktop MSI (Windows)
 
 on:
   push:
@@ -13,101 +13,72 @@ jobs:
       CRAFT_TARGET: windows-msvc2022_64-cl
       CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
       CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
-      CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2022_64-cl
-      CRAFT_PYTHON: C:\hostedtoolcache\windows\Python\3.12.10\x64\python.exe
 
     steps:
-      # -------------------------------------------------
-      # 1. CHECKOUT
-      # -------------------------------------------------
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout source
+      uses: actions/checkout@v4
 
-      # -------------------------------------------------
-      # 2. SETUP PYTHON (HOSTED)
-      # -------------------------------------------------
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+    # ⚠️ Craft DOES NOT WORK with Python 3.12
+    - name: Setup Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-      # -------------------------------------------------
-      # 3. INSTALL WiX
-      # -------------------------------------------------
-      - name: Install WiX
-        shell: pwsh
-        run: |
-          choco install wixtoolset --no-progress -y
+    - name: Clone CraftMaster
+      shell: powershell
+      run: |
+        if (!(Test-Path "$env:CRAFT_MASTER_LOCATION")) {
+          git clone https://invent.kde.org/packaging/craftmaster.git `
+            -b master `
+            "$env:CRAFT_MASTER_LOCATION"
+        }
 
-      # -------------------------------------------------
-      # 4. INSTALL INKSCAPE (SVG ONLY)
-      # -------------------------------------------------
-      - name: Install Inkscape
-        shell: pwsh
-        run: |
-          choco install inkscape --no-progress -y
+    - name: Create craftmaster.ini
+      shell: powershell
+      run: |
+        echo [General] > "$env:CRAFT_MASTER_CONFIG"
+        echo ABI = windows-msvc2022_64-cl >> "$env:CRAFT_MASTER_CONFIG"
 
-          $inkscapeExe = "C:\Program Files\Inkscape\bin\inkscape.exe"
-          if (!(Test-Path $inkscapeExe)) {
-            Write-Error "Inkscape not found"
-            exit 1
-          }
+    - name: Bootstrap Craft
+      shell: powershell
+      run: |
+        python $env:CRAFT_MASTER_LOCATION\CraftMaster.py `
+          --config $env:CRAFT_MASTER_CONFIG `
+          --target $env:CRAFT_TARGET `
+          craft
 
-          inkscape --version
+    # 🔥 FIX Inkscape blueprint crash
+    - name: Disable Inkscape Blueprint
+      shell: powershell
+      run: |
+        Remove-Item `
+          "$env:CRAFT_TARGET\etc\blueprints\locations\desktop-client-blueprints\binary\_win\inkscape" `
+          -Recurse -Force -ErrorAction SilentlyContinue
 
-      # -------------------------------------------------
-      # 5. INSTALL CRAFT
-      # -------------------------------------------------
-      - name: Install Craft
-        shell: pwsh
-        run: |
-          if (!(Test-Path "${{ env.CRAFT_MASTER_LOCATION }}")) {
-            git clone --depth=1 `
-              https://invent.kde.org/packaging/craftmaster.git `
-              "${{ env.CRAFT_MASTER_LOCATION }}"
-          }
+    - name: Update Craft
+      shell: powershell
+      run: |
+        $env:Path="$env:CRAFT_TARGET\craft\bin;$env:Path"
+        craft --update
 
-          function craft {
-            param([Parameter(ValueFromRemainingArguments=$true)]$Args)
-            & "$env:CRAFT_PYTHON" `
-              "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
-              --config "${{ env.CRAFT_MASTER_CONFIG }}" `
-              --target ${{ env.CRAFT_TARGET }} -c @Args
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+    - name: Build Nextcloud Desktop
+      shell: powershell
+      run: |
+        $env:Path="$env:CRAFT_TARGET\craft\bin;$env:Path"
+        craft nextcloud-client
 
-          craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-kde.git|stable-4.0|"
-          craft --add-blueprint-repository "https://github.com/nextcloud/desktop-client-blueprints.git|stable-4.0|"
+    - name: Package MSI
+      shell: powershell
+      run: |
+        $env:Path="$env:CRAFT_TARGET\craft\bin;$env:Path"
+        craft package nextcloud-client --options nextcloud-client.packageType=msi
 
-          craft craft
-          craft --install-deps nextcloud-client
-
-      # -------------------------------------------------
-      # 6. BUILD + PACKAGE MSI
-      # -------------------------------------------------
-      - name: Build MSI
-        shell: pwsh
-        run: |
-          function craft {
-            param([Parameter(ValueFromRemainingArguments=$true)]$Args)
-            & "$env:CRAFT_PYTHON" `
-              "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
-              --config "${{ env.CRAFT_MASTER_CONFIG }}" `
-              --target ${{ env.CRAFT_TARGET }} -c @Args
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-          craft nextcloud-client
-          craft package nextcloud-client --options nextcloud-client.packageType=msi
-
-      # -------------------------------------------------
-      # 7. UPLOAD MSI
-      # -------------------------------------------------
-      - name: Upload MSI
-        uses: actions/upload-artifact@v4
-        with:
-          name: nextcloud-windows-msi
-          path: ${{ env.CRAFT_ROOT }}\tmp\*.msi
+    - name: Upload MSI
+      uses: actions/upload-artifact@v4
+      with:
+        name: nextcloud-desktop-msi
+        path: |
+          ${{ env.CRAFT_TARGET }}\tmp\*.msi
 
 
 # name: Build Branded Windows MSI Client
@@ -126,6 +97,7 @@ jobs:
 #       CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
 #       CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
 #       CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2022_64-cl
+#       CRAFT_PYTHON: C:\hostedtoolcache\windows\Python\3.12.10\x64\python.exe
 
 #     steps:
 #       # -------------------------------------------------
@@ -135,7 +107,7 @@ jobs:
 #         uses: actions/checkout@v4
 
 #       # -------------------------------------------------
-#       # 2. SETUP PYTHON
+#       # 2. SETUP PYTHON (HOSTED)
 #       # -------------------------------------------------
 #       - name: Setup Python
 #         uses: actions/setup-python@v5
@@ -151,16 +123,17 @@ jobs:
 #           choco install wixtoolset --no-progress -y
 
 #       # -------------------------------------------------
-#       # 4. INSTALL INKSCAPE (REQUIRED)
+#       # 4. INSTALL INKSCAPE (SVG ONLY)
 #       # -------------------------------------------------
 #       - name: Install Inkscape
 #         shell: pwsh
 #         run: |
 #           choco install inkscape --no-progress -y
 
-#           $inkscapePath = "C:\Program Files\Inkscape\bin"
-#           if (Test-Path $inkscapePath) {
-#             echo "$inkscapePath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+#           $inkscapeExe = "C:\Program Files\Inkscape\bin\inkscape.exe"
+#           if (!(Test-Path $inkscapeExe)) {
+#             Write-Error "Inkscape not found"
+#             exit 1
 #           }
 
 #           inkscape --version
@@ -179,7 +152,8 @@ jobs:
 
 #           function craft {
 #             param([Parameter(ValueFromRemainingArguments=$true)]$Args)
-#             python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+#             & "$env:CRAFT_PYTHON" `
+#               "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
 #               --config "${{ env.CRAFT_MASTER_CONFIG }}" `
 #               --target ${{ env.CRAFT_TARGET }} -c @Args
 #             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -199,7 +173,8 @@ jobs:
 #         run: |
 #           function craft {
 #             param([Parameter(ValueFromRemainingArguments=$true)]$Args)
-#             python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+#             & "$env:CRAFT_PYTHON" `
+#               "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
 #               --config "${{ env.CRAFT_MASTER_CONFIG }}" `
 #               --target ${{ env.CRAFT_TARGET }} -c @Args
 #             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -259,7 +234,22 @@ jobs:
 # #           choco install wixtoolset --no-progress -y
 
 # #       # -------------------------------------------------
-# #       # 4. INSTALL CRAFT (CORRECT)
+# #       # 4. INSTALL INKSCAPE (REQUIRED)
+# #       # -------------------------------------------------
+# #       - name: Install Inkscape
+# #         shell: pwsh
+# #         run: |
+# #           choco install inkscape --no-progress -y
+
+# #           $inkscapePath = "C:\Program Files\Inkscape\bin"
+# #           if (Test-Path $inkscapePath) {
+# #             echo "$inkscapePath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+# #           }
+
+# #           inkscape --version
+
+# #       # -------------------------------------------------
+# #       # 5. INSTALL CRAFT
 # #       # -------------------------------------------------
 # #       - name: Install Craft
 # #         shell: pwsh
@@ -285,7 +275,7 @@ jobs:
 # #           craft --install-deps nextcloud-client
 
 # #       # -------------------------------------------------
-# #       # 5. BUILD + PACKAGE MSI (CORRECT ORDER)
+# #       # 6. BUILD + PACKAGE MSI
 # #       # -------------------------------------------------
 # #       - name: Build MSI
 # #         shell: pwsh
@@ -302,10 +292,103 @@ jobs:
 # #           craft package nextcloud-client --options nextcloud-client.packageType=msi
 
 # #       # -------------------------------------------------
-# #       # 6. UPLOAD MSI
+# #       # 7. UPLOAD MSI
 # #       # -------------------------------------------------
 # #       - name: Upload MSI
 # #         uses: actions/upload-artifact@v4
 # #         with:
 # #           name: nextcloud-windows-msi
 # #           path: ${{ env.CRAFT_ROOT }}\tmp\*.msi
+
+
+# # # name: Build Branded Windows MSI Client
+
+# # # on:
+# # #   push:
+# # #     branches: [ master, main ]
+# # #   workflow_dispatch:
+
+# # # jobs:
+# # #   build:
+# # #     runs-on: windows-2022
+
+# # #     env:
+# # #       CRAFT_TARGET: windows-msvc2022_64-cl
+# # #       CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
+# # #       CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
+# # #       CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2022_64-cl
+
+# # #     steps:
+# # #       # -------------------------------------------------
+# # #       # 1. CHECKOUT
+# # #       # -------------------------------------------------
+# # #       - name: Checkout
+# # #         uses: actions/checkout@v4
+
+# # #       # -------------------------------------------------
+# # #       # 2. SETUP PYTHON
+# # #       # -------------------------------------------------
+# # #       - name: Setup Python
+# # #         uses: actions/setup-python@v5
+# # #         with:
+# # #           python-version: '3.12'
+
+# # #       # -------------------------------------------------
+# # #       # 3. INSTALL WiX
+# # #       # -------------------------------------------------
+# # #       - name: Install WiX
+# # #         shell: pwsh
+# # #         run: |
+# # #           choco install wixtoolset --no-progress -y
+
+# # #       # -------------------------------------------------
+# # #       # 4. INSTALL CRAFT (CORRECT)
+# # #       # -------------------------------------------------
+# # #       - name: Install Craft
+# # #         shell: pwsh
+# # #         run: |
+# # #           if (!(Test-Path "${{ env.CRAFT_MASTER_LOCATION }}")) {
+# # #             git clone --depth=1 `
+# # #               https://invent.kde.org/packaging/craftmaster.git `
+# # #               "${{ env.CRAFT_MASTER_LOCATION }}"
+# # #           }
+
+# # #           function craft {
+# # #             param([Parameter(ValueFromRemainingArguments=$true)]$Args)
+# # #             python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+# # #               --config "${{ env.CRAFT_MASTER_CONFIG }}" `
+# # #               --target ${{ env.CRAFT_TARGET }} -c @Args
+# # #             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# # #           }
+
+# # #           craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-kde.git|stable-4.0|"
+# # #           craft --add-blueprint-repository "https://github.com/nextcloud/desktop-client-blueprints.git|stable-4.0|"
+
+# # #           craft craft
+# # #           craft --install-deps nextcloud-client
+
+# # #       # -------------------------------------------------
+# # #       # 5. BUILD + PACKAGE MSI (CORRECT ORDER)
+# # #       # -------------------------------------------------
+# # #       - name: Build MSI
+# # #         shell: pwsh
+# # #         run: |
+# # #           function craft {
+# # #             param([Parameter(ValueFromRemainingArguments=$true)]$Args)
+# # #             python "${{ env.CRAFT_MASTER_LOCATION }}\CraftMaster.py" `
+# # #               --config "${{ env.CRAFT_MASTER_CONFIG }}" `
+# # #               --target ${{ env.CRAFT_TARGET }} -c @Args
+# # #             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# # #           }
+
+# # #           craft nextcloud-client
+# # #           craft package nextcloud-client --options nextcloud-client.packageType=msi
+
+# # #       # -------------------------------------------------
+# # #       # 6. UPLOAD MSI
+# # #       # -------------------------------------------------
+# # #       - name: Upload MSI
+# # #         uses: actions/upload-artifact@v4
+# # #         with:
+# # #           name: nextcloud-windows-msi
+# # #           path: ${{ env.CRAFT_ROOT }}\tmp\*.msi

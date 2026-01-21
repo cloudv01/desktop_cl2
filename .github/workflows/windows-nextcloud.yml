@@ -10,7 +10,7 @@ jobs:
     runs-on: windows-2022
 
     env:
-      CRAFT_TARGET: windows-msvc2022_64-cl
+      CRAFT_TARGET: ${{ github.workspace }}\windows-msvc2022_64-cl
       CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
       CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
 
@@ -22,7 +22,7 @@ jobs:
       uses: actions/checkout@v4
 
     # -------------------------------------------------
-    # 2️⃣ Setup Python 3.10 (Craft incompatible with 3.12)
+    # 2️⃣ Setup Python 3.10
     # -------------------------------------------------
     - name: Setup Python 3.10
       uses: actions/setup-python@v5
@@ -42,7 +42,7 @@ jobs:
         }
 
     # -------------------------------------------------
-    # 4️⃣ Create craftmaster.ini (ASCII / no BOM)
+    # 4️⃣ Create craftmaster.ini
     # -------------------------------------------------
     - name: Create craftmaster.ini
       shell: powershell
@@ -53,20 +53,18 @@ jobs:
           -Encoding Ascii
 
     # -------------------------------------------------
-    # 5️⃣ Add Craft Blueprints (no -c)
+    # 5️⃣ Clone Nextcloud Desktop Blueprints
     # -------------------------------------------------
-    - name: Add Craft Blueprints
+    - name: Clone Nextcloud Desktop Blueprints
       shell: powershell
       run: |
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          --add-blueprint-repository "https://invent.kde.org/packaging/craft-blueprints-kde.git"
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          --add-blueprint-repository "https://github.com/nextcloud/desktop-client-blueprints.git"
+        $bpTarget = "$env:CRAFT_TARGET\etc\blueprints\locations\desktop-client-blueprints"
+        if (!(Test-Path $bpTarget)) {
+          git clone https://github.com/nextcloud/desktop-client-blueprints.git $bpTarget
+        }
 
     # -------------------------------------------------
-    # 6️⃣ Install dependencies (fast-fail if missing)
+    # 6️⃣ Install dependencies
     # -------------------------------------------------
     - name: Install dependencies
       shell: powershell
@@ -86,17 +84,7 @@ jobs:
           -Recurse -Force -ErrorAction SilentlyContinue
 
     # -------------------------------------------------
-    # 8️⃣ Update Craft
-    # -------------------------------------------------
-    - name: Update Craft
-      shell: powershell
-      run: |
-        python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" `
-          --config "$env:CRAFT_MASTER_CONFIG" `
-          -c --update
-
-    # -------------------------------------------------
-    # 9️⃣ Build Nextcloud Desktop
+    # 8️⃣ Build Nextcloud Desktop
     # -------------------------------------------------
     - name: Build Nextcloud Desktop
       shell: powershell
@@ -106,7 +94,7 @@ jobs:
           -c nextcloud-client
 
     # -------------------------------------------------
-    # 🔟 Package MSI
+    # 9️⃣ Package MSI
     # -------------------------------------------------
     - name: Package MSI
       shell: powershell
@@ -116,7 +104,7 @@ jobs:
           -c package nextcloud-client --options nextcloud-client.packageType=msi
 
     # -------------------------------------------------
-    # 1️⃣1️⃣ Upload MSI Artifact
+    # 🔟 Upload MSI
     # -------------------------------------------------
     - name: Upload MSI
       uses: actions/upload-artifact@v4
